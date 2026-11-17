@@ -1,0 +1,18 @@
+﻿# Runtime data and state
+data/
+
+# Secrets
+.env
+
+# Python artefacts
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node / editor
+node_modules/
+.DS_Store

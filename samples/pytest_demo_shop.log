@@ -1,0 +1,21 @@
+============================= test session starts ==============================
+collected 4 items
+
+tests/test_orders.py::test_checkout_total PASSED                         [ 25%]
+tests/test_orders.py::test_empty_cart PASSED                             [ 50%]
+tests/test_orders.py::test_discount_applied_once FAILED                  [ 75%]
+tests/test_orders.py::test_gift_wrap SKIPPED (gift wrap not implemented) [100%]
+
+=================================== FAILURES ===================================
+___________________________ test_discount_applied_once _________________________
+
+    def test_discount_applied_once():
+        cart = [{"price": 10.0, "qty": 3}, {"price": 5.0, "qty": 2}]
+>       assert compute_total(cart, discount_pct=10) == 36.0
+E       assert 32.4 == 36.0
+E        +  where 32.4 = compute_total([{'price': 10.0, 'qty': 3}, {'price': 5.0, 'qty': 2}], discount_pct=10)
+
+tests/test_orders.py:12: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_orders.py::test_discount_applied_once - assert 32.4 == 36.0
+=================== 1 failed, 2 passed, 1 skipped in 0.12s =====================

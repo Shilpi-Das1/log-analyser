@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.acme.shop.JobRunnerIT" tests="4" failures="1" errors="1" skipped="1">
+  <testcase classname="com.acme.shop.JobRunnerIT" name="processSingleItem" time="0.8"/>
+  <testcase classname="com.acme.shop.JobRunnerIT" name="processLegacyFormat" time="0.0">
+    <skipped message="legacy format removed in 2.0"/>
+  </testcase>
+  <testcase classname="com.acme.shop.JobRunnerIT" name="processBatch" time="30.2">
+    <error message="java.util.concurrent.TimeoutException: batch did not complete within 30s" type="java.util.concurrent.TimeoutException">java.util.concurrent.TimeoutException: batch did not complete within 30s
+	at com.acme.shop.JobRunner.awaitCompletion(JobRunner.java:41)
+	at com.acme.shop.JobRunnerIT.processBatch(JobRunnerIT.java:22)
+Caused by: java.lang.NullPointerException: Cannot invoke "String.length()" because "payload" is null
+	at com.acme.shop.BatchWorker.handle(BatchWorker.java:17)
+	at com.acme.shop.BatchWorker.run(BatchWorker.java:12)</error>
+    <system-err>WARN worker-3 terminated unexpectedly; job 'batch-77' left in state RUNNING</system-err>
+  </testcase>
+  <testcase classname="com.acme.shop.JobRunnerIT" name="processEmptyBatch" time="0.4">
+    <failure message="expected:&lt;0&gt; but was:&lt;1&gt;" type="java.lang.AssertionError">java.lang.AssertionError: expected:&lt;0&gt; but was:&lt;1&gt;
+	at org.junit.Assert.assertEquals(Assert.java:115)
+	at com.acme.shop.JobRunnerIT.processEmptyBatch(JobRunnerIT.java:31)</failure>
+  </testcase>
+</testsuite>

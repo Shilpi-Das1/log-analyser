@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Surefire XML report for the ocs-quota Maven project.
+  Mirrors what `mvn test` writes to target/surefire-reports/.
+  Two tests fail intentionally (bugs in QuotaManager.java).
+-->
+<testsuite name="com.ocs.quota.QuotaManagerTest"
+           tests="10" failures="2" errors="0" skipped="0"
+           time="0.312">
+
+  <testcase classname="com.ocs.quota.QuotaManagerTest"
+            name="testInitialUsageIsZero" time="0.004"/>
+
+  <testcase classname="com.ocs.quota.QuotaManagerTest"
+            name="testAddUsageSingleNamespace" time="0.002"/>
+
+  <!-- FAIL: addUsage overwrites instead of accumulating -->
+  <testcase classname="com.ocs.quota.QuotaManagerTest"
+            name="testAddUsageAccumulatesAcrossCalls" time="0.003">
+    <failure message="addUsage must accumulate; got only the last write (3.0 GiB) ==&gt; expected: &lt;5.0&gt; but was: &lt;3.0&gt;"
+             type="org.opentest4j.AssertionFailedError">org.opentest4j.AssertionFailedError: addUsage must accumulate; got only the last write (3.0 GiB) ==&gt; expected: &lt;5.0&gt; but was: &lt;3.0&gt;
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+	at org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:197)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:150)
+	at com.ocs.quota.QuotaManagerTest.testAddUsageAccumulatesAcrossCalls(QuotaManagerTest.java:91)
+Caused by: com.ocs.quota.QuotaManager.addUsage(QuotaManager.java:38)
+	-- overwrites usageBytes.put(namespace, bytes) instead of merge --</failure>
+  </testcase>
+
+  <testcase classname="com.ocs.quota.QuotaManagerTest"
+            name="testTotalUsageAcrossNamespaces" time="0.002"/>
+
+  <testcase classname="com.ocs.quota.QuotaManagerTest"
+            name="testCheckQuotaPassesUnderLimit" time="0.001"/>
+
+  <testcase classname="com.ocs.quota.QuotaManagerTest"
+            name="testCheckQuotaRaisesWhenExceeded" time="0.002"/>
+
+  <!-- FAIL: integer division in utilisationPct() truncates small pct to 0 -->
+  <testcase classname="com.ocs.quota.QuotaManagerTest"
+            name="testUtilisationPctReturnsFloat" time="0.002">
+    <failure message="utilisationPct must return 10.0 for 1 GiB used out of 10 GiB limit; got 0.0 ==&gt; expected: &lt;10.0&gt; but was: &lt;0.0&gt;"
+             type="org.opentest4j.AssertionFailedError">org.opentest4j.AssertionFailedError: utilisationPct must return 10.0 for 1 GiB used out of 10 GiB limit; got 0.0 ==&gt; expected: &lt;10.0&gt; but was: &lt;0.0&gt;
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+	at org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:197)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:150)
+	at com.ocs.quota.QuotaManagerTest.testUtilisationPctReturnsFloat(QuotaManagerTest.java:102)
+Caused by: com.ocs.quota.QuotaManager.utilisationPct(QuotaManager.java:74)
+	-- integer division: total / limitBytes * 100 truncates to 0 --</failure>
+  </testcase>
+
+  <testcase classname="com.ocs.quota.QuotaManagerTest"
+            name="testUtilisationPctAtFullCapacity" time="0.001"/>
+
+  <testcase classname="com.ocs.quota.QuotaManagerTest"
+            name="testNegativeLimitThrows" time="0.001"/>
+
+  <testcase classname="com.ocs.quota.QuotaManagerTest"
+            name="testZeroLimitThrows" time="0.001"/>
+
+</testsuite>

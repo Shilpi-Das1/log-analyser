@@ -1,0 +1,37 @@
+=== RUN   TestNewManagerRejectsZeroLimit
+--- PASS: TestNewManagerRejectsZeroLimit (0.00s)
+=== RUN   TestNewManagerRejectsNegativeLimit
+--- PASS: TestNewManagerRejectsNegativeLimit (0.00s)
+=== RUN   TestInitialUsageIsZero
+--- PASS: TestInitialUsageIsZero (0.00s)
+=== RUN   TestAddUsageSingleNamespace
+--- PASS: TestAddUsageSingleNamespace (0.00s)
+=== RUN   TestTotalUsageAcrossNamespaces
+--- PASS: TestTotalUsageAcrossNamespaces (0.00s)
+=== RUN   TestCheckQuotaPassesUnderLimit
+--- PASS: TestCheckQuotaPassesUnderLimit (0.00s)
+=== RUN   TestCheckQuotaRaisesWhenExceeded
+--- PASS: TestCheckQuotaRaisesWhenExceeded (0.00s)
+=== RUN   TestUtilisationPctAtFullCapacity
+--- PASS: TestUtilisationPctAtFullCapacity (0.00s)
+=== RUN   TestAddUsageAccumulatesAcrossCalls
+    manager_test.go:91: addUsage must accumulate: want 5.0 GiB, got 3 GiB (only the last write was kept)
+--- FAIL: TestAddUsageAccumulatesAcrossCalls (0.00s)
+=== RUN   TestUtilisationPctReturnsFloat
+    manager_test.go:101: utilisationPct: want ~10.0, got 0 (integer division truncated result)
+--- FAIL: TestUtilisationPctReturnsFloat (0.00s)
+=== RUN   TestParseQuantityGiB_Gi
+--- PASS: TestParseQuantityGiB_Gi (0.00s)
+=== RUN   TestParseQuantityGiB_Mi
+--- PASS: TestParseQuantityGiB_Mi (0.00s)
+=== RUN   TestParseQuantityGiB_Zero
+--- PASS: TestParseQuantityGiB_Zero (0.00s)
+=== RUN   TestQuotaStatusReflectsPvcDeletion
+    k8s_client_test.go:46: K8s ResourceQuota status.used not updated after PVC deletion: expected 6.00 GiB, got 10.00 GiB. Known regression in kube-controller-manager quota reconciler (OCP 4.14, StorageClass with Retain reclaim policy). quota_go/k8s_client.go:GetUsedGiB
+--- FAIL: TestQuotaStatusReflectsPvcDeletion (0.00s)
+=== RUN   TestMissingStorageKeyRaises
+    k8s_client_test.go:62: K8s ResourceQuota status.used is missing requests.storage despite active PVCs. got 0.00 GiB; product bug in OCP quota admission controller. quota_go/k8s_client.go:GetUsedGiB
+--- FAIL: TestMissingStorageKeyRaises (0.00s)
+FAIL
+exit status 1
+FAIL	github.com/ocs-quota	0.021s

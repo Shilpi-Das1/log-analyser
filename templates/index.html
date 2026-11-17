@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Log Analyser</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --bd:#dfe3e8; --tx:#1f2328; --mu:#5b6570; --ac:#2563eb;
+          --ok:#15803d; --warn:#b45309; --bad:#b91c1c; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.55 -apple-system,"Segoe UI",system-ui,sans-serif; background:var(--bg); color:var(--tx); }
+  header { background:#fff; border-bottom:1px solid var(--bd); padding:12px 24px; display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0; font-weight:600; }
+  nav button { background:none; color:var(--mu); border:0; border-bottom:2px solid transparent; border-radius:0; padding:6px 10px; }
+  nav button.on { color:var(--ac); border-bottom-color:var(--ac); }
+  .pill { font-size:12px; padding:2px 10px; border-radius:999px; background:#e5e7eb; color:var(--mu); }
+  .pill.ok { background:#dcfce7; color:#166534; } .pill.off { background:#fee2e2; color:#991b1b; }
+  main { max-width:1040px; margin:0 auto; padding:20px; display:grid; gap:16px; }
+  .card { background:var(--card); border:1px solid var(--bd); border-radius:8px; padding:16px; }
+  .card h2 { font-size:15px; margin:0 0 10px; }
+  textarea, input[type=text], select { width:100%; font:13px ui-monospace,Consolas,monospace; border:1px solid var(--bd); border-radius:6px; padding:8px; background:#fff; color:var(--tx); }
+  textarea { min-height:120px; resize:vertical; }
+  button { background:var(--ac); color:#fff; border:0; border-radius:6px; padding:7px 13px; cursor:pointer; font-size:13px; }
+  button.sec { background:#e5e7eb; color:var(--tx); } button.go { background:var(--ok); } button.del { background:#fee2e2; color:#991b1b; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px; }
+  .row > * { flex:0 0 auto; } .row select, .row input[type=text] { width:auto; min-width:160px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--bd); vertical-align:top; overflow:hidden; }
+  th { color:var(--mu); font-weight:600; }
+  #tests td:first-child { max-width:480px; word-break:break-all; }
+  #tests td:nth-child(2) { width:110px; white-space:nowrap; }
+  #tests td:nth-child(3) { width:220px; word-break:break-word; }
+  #tests td:last-child { width:120px; white-space:nowrap; }
+  .st { display:inline-block; padding:1px 9px; border-radius:999px; font-size:12px; font-weight:600; }
+  .st.passed { background:#dcfce7; color:#166534; } .st.failed { background:#fee2e2; color:#991b1b; } .st.skipped { background:#f3f4f6; color:#6b7280; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:999px; font-weight:600; font-size:12px; color:#fff; }
+  .test_bug{background:#2563eb} .product_bug{background:var(--bad)} .env_infra{background:var(--warn)} .flaky_timeout{background:#7c3aed} .unknown{background:#6b7280}
+  .stats { display:flex; gap:12px; flex-wrap:wrap; margin:6px 0; }
+  .stat { border:1px solid var(--bd); border-radius:8px; padding:6px 14px; min-width:90px; text-align:center; background:#fafbfc; }
+  .stat b { display:block; font-size:20px; }
+  pre { background:#f3f4f6; color:#111827; border:1px solid var(--bd); padding:10px; border-radius:6px; overflow:auto; max-height:320px; font-size:12px; margin:6px 0; white-space:pre-wrap; }
+  pre .add { background:#dcfce7; } pre .del { background:#fee2e2; }
+  ul { margin:6px 0; padding-left:20px; }
+  .muted { color:var(--mu); } .err { color:var(--bad); margin-top:6px; }
+  .ask { border:1px dashed var(--warn); background:#fffbeb; border-radius:6px; padding:10px; margin-top:8px; }
+  .ask label { font-weight:600; display:block; margin-bottom:4px; }
+  .kbbox { border:1px solid #bbf7d0; background:#f0fdf4; border-radius:6px; padding:8px 10px; margin:8px 0; }
+  .bar { height:8px; background:#e5e7eb; border-radius:4px; overflow:hidden; width:140px; display:inline-block; vertical-align:middle; }
+  .bar > i { display:block; height:100%; background:var(--ac); }
+  .hidden { display:none; } .timeline span { display:inline-block; margin-right:10px; font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Log Analyser</h1>
+  <nav>
+    <button class="on" data-tab="analyse">Analyse</button>
+    <button data-tab="projects">Projects</button>
+    <button data-tab="kb">Knowledge base</button>
+  </nav>
+  <span class="pill" id="p-llm">llm</span>
+  <span class="pill" id="p-gh">github</span>
+</header>
+<main>
+  <div id="err" class="err"></div>
+
+  <!-- ANALYSE -->
+  <div id="tab-analyse" style="display:grid;gap:16px">
+    <section class="card">
+      <h2>1. Upload a log</h2>
+      <div class="row" style="margin-top:0">
+        <label>Project <select id="sel-project"></select></label>
+        <input type="file" id="file">
+        <select id="sample"><option value="">Load a sample…</option></select>
+        <button id="btn-submit">Parse log</button>
+        <span id="busy" class="muted"></span>
+      </div>
+      <textarea id="log" placeholder="…or paste the log here (pytest, JUnit XML, Maven, Go, shell, any text)" style="margin-top:8px"></textarea>
+    </section>
+
+    <section class="card" id="uploads-card">
+      <h2 style="cursor:pointer;user-select:none" id="uploads-toggle"><span id="uploads-arrow">▶</span> Saved logs <span class="muted" id="uploads-count"></span></h2>
+      <div id="uploads-body" style="display:none;margin-top:6px">
+        <p class="muted" style="margin:0 0 6px">Files you've uploaded. Click <b>Use</b> to reload and parse. Capped at 20 files; oldest are removed automatically.</p>
+        <table style="table-layout:auto"><thead><tr><th>Name</th><th>Size</th><th></th></tr></thead><tbody id="uploads-rows"></tbody></table>
+      </div>
+    </section>
+
+    <section class="card" id="recent-card">
+      <h2 style="cursor:pointer;user-select:none" id="recent-toggle"><span id="recent-arrow">▶</span> Recent runs <span class="muted" id="recent-count"></span></h2>
+      <div id="recent-body" style="display:none;margin-top:6px">
+        <p class="muted" style="margin:0 0 6px">Previously parsed logs. Click <b>Restore</b> to reload a run — already-analysed tests open instantly without an LLM call.</p>
+        <table style="table-layout:auto"><thead><tr><th>Log</th><th>Project</th><th>Format</th><th>Failed</th><th>Created</th><th></th></tr></thead><tbody id="recent-rows"></tbody></table>
+      </div>
+    </section>
+
+    <section class="card hidden" id="run-card">
+      <h2>2. Results <span class="muted" id="run-meta"></span></h2>
+      <div class="stats" id="stats"></div>
+      <div class="muted" id="run-note">Only failed tests are analysed. Skipped and passed tests are listed for reference.</div>
+      <table><thead><tr><th style="width:32px"><input type="checkbox" id="chk-all" title="Select all failed"></th><th>Test</th><th>Status</th><th>Detail</th><th></th></tr></thead><tbody id="tests"></tbody></table>
+      <div class="row" id="batch-bar" style="display:none;margin-top:10px;align-items:center;gap:10px">
+        <button id="btn-analyse-sel" class="go">Analyse selected (<span id="sel-count">0</span>)</button>
+        <button id="btn-stop-batch" class="sec" style="display:none">Stop</button>
+        <span id="batch-progress" class="muted"></span>
+        <div class="bar" id="batch-bar-fill" style="width:200px;display:none"><i id="batch-bar-i"></i></div>
+      </div>
+    </section>
+
+    <section class="card hidden" id="case-card">
+      <h2>3. Diagnosis <span class="muted" id="c-name"></span></h2>
+      <div>
+        <span class="badge" id="r-cat"></span>
+        <span class="muted">confidence</span> <span class="bar"><i id="r-bar"></i></span> <b id="r-conf"></b>
+        <span class="pill" id="r-src"></span>
+      </div>
+      <div id="kbhints"></div>
+      <p id="r-summary"></p>
+      <div id="r-root"></div><div id="r-wait"></div><div id="r-comp"></div>
+      <h2 style="margin-top:12px">Evidence</h2><ul id="r-evidence"></ul>
+      <h2>Suggested next step</h2><p id="r-fix"></p>
+      <div class="timeline muted" id="r-history"></div>
+      <div id="ask" class="ask hidden">
+        <b>More information needed</b>
+        <p class="muted" style="margin:4px 0">Answer below (paste logs, command output, versions) and the analysis re-runs with your input.</p>
+        <div id="ask-fields"></div>
+        <button id="btn-info">Submit and re-analyse</button>
+      </div>
+      <div class="row">
+        <button id="btn-patch" class="sec">Generate patch</button>
+        <button id="btn-issue" class="sec">Draft GitHub issue</button>
+        <button id="btn-kb" class="sec">Save to knowledge base</button>
+      </div>
+      <div id="hint" class="muted"></div>
+    </section>
+
+    <section class="card hidden" id="patch-card">
+      <h2>4. Proposed patch <span class="muted" id="patch-src"></span></h2>
+      <pre id="patch"></pre>
+      <input type="text" id="patch-notes" placeholder="Optional guidance for regenerating the patch">
+      <div class="row"><button id="btn-patch2" class="sec">Regenerate</button></div>
+      <h2 style="margin-top:14px">5. Re-analyse after a run with this patch</h2>
+      <p class="muted" style="margin:0 0 6px">Apply the patch, rerun the test, then upload the new log. Passed: the fix is saved as verified. Failed: the new log is analysed together with this analysis.</p>
+      <div class="row" style="margin-top:0">
+        <input type="file" id="rerun-file">
+        <button id="btn-rerun" class="sec">Submit rerun log</button>
+        <button id="btn-pr" class="sec">Draft pull request</button>
+      </div>
+      <div id="rerun-status" style="margin-top:6px"></div>
+    </section>
+
+    <section class="card hidden" id="draft-card">
+      <h2 id="draft-title-h">Draft</h2>
+      <div id="dups" class="muted"></div>
+      <input type="text" id="draft-title">
+      <textarea id="draft-body" style="min-height:220px;margin-top:8px"></textarea>
+      <div class="row">
+        <button id="btn-save" class="sec">Save edits</button>
+        <button id="btn-publish" class="go">Approve and create</button>
+      </div>
+      <div id="published"></div>
+    </section>
+  </div>
+
+  <!-- PROJECTS -->
+  <div id="tab-projects" class="hidden" style="display:none;gap:16px">
+    <section class="card">
+      <h2>Registered projects</h2>
+      <table><thead><tr><th>Name</th><th>Path</th><th>Log format</th><th>GitHub repo</th><th></th></tr></thead><tbody id="proj-rows"></tbody></table>
+    </section>
+    <section class="card">
+      <h2>Add a project</h2>
+      <p class="muted" style="margin-top:0">The repository must be a directory inside the projects root mounted in the container.</p>
+      <div class="row" style="margin-top:0">
+        <input type="text" id="np-name" placeholder="name (e.g. ocs-ci)">
+        <select id="np-path"></select>
+        <select id="np-fmt"></select>
+        <input type="text" id="np-gh" placeholder="GitHub owner/name">
+      </div>
+      <input type="text" id="np-hint" placeholder="Optional domain hint for the analyser" style="margin-top:8px">
+      <div class="row"><button id="btn-addproj">Add project</button></div>
+    </section>
+    <section class="card">
+      <h2>Clone from Git URL</h2>
+      <p class="muted" style="margin-top:0">Clones the repository into the projects root on the server, then registers it. Requires <code>git</code> to be installed and the projects folder to be writable.</p>
+      <div class="row" style="margin-top:0">
+        <input type="text" id="cl-url" placeholder="https://github.com/owner/repo.git" style="min-width:300px;flex:1">
+        <input type="text" id="cl-name" placeholder="name (auto-derived if blank)">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <select id="cl-fmt"></select>
+        <input type="text" id="cl-gh" placeholder="GitHub owner/name (for issues/PRs)">
+      </div>
+      <input type="text" id="cl-hint" placeholder="Optional domain hint for the analyser" style="margin-top:8px">
+      <div class="row" style="margin-top:8px;align-items:center">
+        <input type="password" id="cl-token" placeholder="Token / password (https only, never stored)" style="min-width:260px">
+        <span class="muted" style="font-size:12px">Injected into the clone URL only; not saved anywhere.</span>
+      </div>
+      <div class="row"><button id="btn-clone" class="go">Clone and add</button><span id="clone-busy" class="muted"></span></div>
+      <div id="clone-err" class="err"></div>
+    </section>
+  </div>
+
+  <!-- KB -->
+  <div id="tab-kb" style="display:none;gap:16px">
+    <section class="card">
+      <h2>Knowledge base <span class="muted">(known problem → fix; verified entries are reused without an LLM call)</span></h2>
+      <table><thead><tr><th>Project</th><th>Problem</th><th>Fix</th><th>Status</th><th>Hits</th><th></th></tr></thead><tbody id="kb-rows"></tbody></table>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const el = (tag, text, cls) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n; };
+let run = null, current = null, draftKind = null, samples = [];
+
+async function api(method, url, body) {
+  const opts = { method, headers: {} };
+  if (body instanceof FormData) opts.body = body;
+  else if (body) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+  const resp = await fetch(url, opts);
+  const data = await resp.json().catch(() => ({ error: "Invalid server response" }));
+  if (!resp.ok) throw new Error(data.error || ("HTTP " + resp.status));
+  return data;
+}
+function busy(msg) { $("busy").textContent = msg || ""; document.querySelectorAll("button").forEach(b => { if (msg) { b.dataset.was = b.disabled ? "1" : ""; b.disabled = true; } else if (b.dataset.was !== undefined) { b.disabled = b.dataset.was === "1"; delete b.dataset.was; } }); }
+function showErr(e) { $("err").textContent = e ? (e.message || String(e)) : ""; }
+async function act(label, fn) { showErr(null); busy(label); try { await fn(); } catch (e) { showErr(e); } finally { busy(""); if (current) renderCase(current); } }
+
+/* tabs */
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
+  ["analyse", "projects", "kb"].forEach(t => $("tab-" + t).style.display = t === b.dataset.tab ? "grid" : "none");
+  if (b.dataset.tab === "projects") loadProjects();
+  if (b.dataset.tab === "kb") loadKb();
+});
+
+/* uploads */
+async function loadUploads() {
+  const list = await api("GET", "/api/uploads");
+  const rows = $("uploads-rows"); rows.replaceChildren();
+  $("uploads-count").textContent = list.length ? "(" + list.length + ")" : "";
+  list.forEach(u => {
+    const tr = el("tr");
+    tr.appendChild(el("td", u.name));
+    tr.appendChild(el("td", (u.size / 1024).toFixed(1) + " KB", "muted"));
+    const td = el("td");
+    const useBtn = el("button", "Use", "sec"); useBtn.style.marginRight = "6px";
+    useBtn.onclick = () => act("Loading…", async () => {
+      const data = await api("GET", "/api/uploads/" + encodeURIComponent(u.name));
+      $("log").value = data.text.slice(0, 200000); $("file").value = "";
+      const project = $("sel-project").value;
+      const r = await api("POST", "/api/runs", { project, log: data.text, name: data.name });
+      current = null; $("case-card").classList.add("hidden"); $("patch-card").classList.add("hidden"); $("draft-card").classList.add("hidden"); renderRun(r);
+    });
+    const delBtn = el("button", "Delete", "del");
+    delBtn.onclick = () => act("", async () => { await api("DELETE", "/api/uploads/" + encodeURIComponent(u.name)); await loadUploads(); });
+    td.append(useBtn, delBtn); tr.appendChild(td); rows.appendChild(tr);
+  });
+}
+$("uploads-toggle").onclick = () => {
+  const body = $("uploads-body"), open = body.style.display !== "none";
+  body.style.display = open ? "none" : "block";
+  $("uploads-arrow").textContent = open ? "▶" : "▼";
+  if (!open) loadUploads();
+};
+
+/* recent runs */
+async function loadRecentRuns() {
+  const list = await api("GET", "/api/runs");
+  const rows = $("recent-rows"); rows.replaceChildren();
+  const recent = list.slice(0, 10);
+  $("recent-count").textContent = recent.length ? "(" + recent.length + ")" : "";
+  recent.forEach(r => {
+    const analysed = r.counts.failed > 0 ? "" : "";
+    const tr = el("tr");
+    tr.appendChild(el("td", r.name));
+    tr.appendChild(el("td", r.project || "—", "muted"));
+    tr.appendChild(el("td", r.format, "muted"));
+    tr.appendChild(el("td", String(r.counts.failed)));
+    tr.appendChild(el("td", r.created.replace("T", " ").replace("+00:00","") + " UTC", "muted"));
+    const td = el("td");
+    const restoreBtn = el("button", "Restore", "sec");
+    restoreBtn.onclick = () => act("Restoring…", async () => {
+      const full = await api("GET", "/api/runs/" + r.id);
+      current = null; $("case-card").classList.add("hidden"); $("patch-card").classList.add("hidden"); $("draft-card").classList.add("hidden");
+      renderRun(full);
+    });
+    td.appendChild(restoreBtn); tr.appendChild(td); rows.appendChild(tr);
+  });
+}
+$("recent-toggle").onclick = () => {
+  const body = $("recent-body"), open = body.style.display !== "none";
+  body.style.display = open ? "none" : "block";
+  $("recent-arrow").textContent = open ? "▶" : "▼";
+  if (!open) loadRecentRuns();
+};
+
+/* projects */
+async function loadProjects() {
+  const list = await api("GET", "/api/projects");
+  const sel = $("sel-project"), prev = sel.value; sel.replaceChildren();
+  const noProj = el("option", "— no project —"); noProj.value = ""; sel.appendChild(noProj);
+  list.forEach(p => { const o = el("option", p.name + (p.available ? "" : " (repo missing)")); o.value = p.name; sel.appendChild(o); });
+  if (prev) sel.value = prev;
+  const rows = $("proj-rows"); rows.replaceChildren();
+  list.forEach(p => {
+    const tr = el("tr"); [p.name, p.path + (p.available ? "" : " (missing)"), p.log_format, p.github_repo || "-"].forEach(v => tr.appendChild(el("td", v)));
+    const td = el("td"); const del = el("button", "Remove", "del"); del.onclick = () => act("", async () => { await api("DELETE", "/api/projects/" + encodeURIComponent(p.name)); await loadProjects(); }); td.appendChild(del); tr.appendChild(td); rows.appendChild(tr);
+  });
+  const avail = await api("GET", "/api/projects/available"); $("np-path").replaceChildren();
+  avail.forEach(n => { const o = el("option", n); o.value = n; $("np-path").appendChild(o); });
+}
+$("btn-addproj").onclick = () => act("Adding…", async () => {
+  await api("POST", "/api/projects", { name: $("np-name").value, path: $("np-path").value, log_format: $("np-fmt").value, github_repo: $("np-gh").value, domain_hint: $("np-hint").value });
+  $("np-name").value = ""; $("np-gh").value = ""; $("np-hint").value = ""; await loadProjects();
+});
+$("btn-clone").onclick = async () => {
+  $("clone-err").textContent = "";
+  const url = $("cl-url").value.trim();
+  if (!url) { $("clone-err").textContent = "Git URL is required."; return; }
+  $("btn-clone").disabled = true; $("clone-busy").textContent = "Cloning… (may take up to 2 min)";
+  try {
+    await api("POST", "/api/projects/clone", {
+      git_url: url, name: $("cl-name").value.trim(),
+      token: $("cl-token").value,
+      log_format: $("cl-fmt").value,
+      github_repo: $("cl-gh").value.trim(),
+      domain_hint: $("cl-hint").value.trim(),
+    });
+    $("cl-url").value = ""; $("cl-name").value = ""; $("cl-token").value = "";
+    $("cl-gh").value = ""; $("cl-hint").value = "";
+    await loadProjects();
+  } catch (e) {
+    $("clone-err").textContent = e.message || String(e);
+  } finally {
+    $("btn-clone").disabled = false; $("clone-busy").textContent = "";
+  }
+};
+
+/* knowledge base */
+async function loadKb() {
+  const rows = $("kb-rows"); rows.replaceChildren();
+  (await api("GET", "/api/kb")).forEach(k => {
+    const tr = el("tr");
+    [k.project, k.problem, k.fix_text || "-", k.status + (k.patch_blocks.length ? " (patch)" : ""), String(k.hits)].forEach(v => tr.appendChild(el("td", v)));
+    const td = el("td"); const del = el("button", "Delete", "del"); del.onclick = () => act("", async () => { await api("DELETE", "/api/kb/" + k.id); await loadKb(); }); td.appendChild(del); tr.appendChild(td); rows.appendChild(tr);
+  });
+}
+
+/* run results */
+function updateSelCount() {
+  const checked = document.querySelectorAll("#tests input.chk-test:checked").length;
+  $("sel-count").textContent = checked;
+  $("batch-bar").style.display = checked > 0 ? "flex" : "none";
+  const failTotal = document.querySelectorAll("#tests input.chk-test").length;
+  $("chk-all").indeterminate = checked > 0 && checked < failTotal;
+  $("chk-all").checked = failTotal > 0 && checked === failTotal;
+}
+
+function renderRun(r) {
+  run = r; $("run-card").classList.remove("hidden");
+  $("run-meta").textContent = " · " + r.name + " · format: " + r.format;
+  const s = $("stats"); s.replaceChildren();
+  [["passed", r.counts.passed], ["failed", r.counts.failed], ["skipped", r.counts.skipped], ["total", r.counts.total]].forEach(([k, v]) => { const d = el("div", undefined, "stat"); d.append(el("b", String(v)), el("span", k, "muted")); s.appendChild(d); });
+  const body = $("tests"); body.replaceChildren();
+  $("batch-bar").style.display = "none"; $("batch-progress").textContent = "";
+  $("batch-bar-fill").style.display = "none"; $("btn-stop-batch").style.display = "none";
+  const order = { failed: 0, passed: 1, skipped: 2 };
+  [...r.tests].sort((a, b) => order[a.status] - order[b.status]).slice(0, 300).forEach(t => {
+    const tr = el("tr"); tr.dataset.testId = t.id;
+    // checkbox cell — only for unanalysed failed tests
+    const chk_td = el("td");
+    if (t.status === "failed" && !t.case_id) {
+      const chk = document.createElement("input"); chk.type = "checkbox"; chk.className = "chk-test"; chk.dataset.testId = t.id;
+      chk.onchange = updateSelCount; chk_td.appendChild(chk);
+    }
+    tr.appendChild(chk_td);
+    tr.appendChild(el("td", t.id));
+    const st = el("td"); st.appendChild(el("span", t.status + (t.kind === "error" ? " (error)" : ""), "st " + t.status)); tr.appendChild(st);
+    tr.appendChild(el("td", t.reason || ""));
+    const act_td = el("td");
+    if (t.status === "failed") {
+      const b = el("button", t.case_id ? "Open analysis" : "Analyse", "sec");
+      b.onclick = () => act("Analysing…", async () => {
+        current = await api("POST", "/api/runs/" + r.id + "/analyse", { test_id: t.id });
+        t.case_id = current.id;
+        // remove checkbox once analysed, refresh count
+        const chk = tr.querySelector("input.chk-test"); if (chk) { chk.checked = false; chk.remove(); }
+        b.textContent = "Open analysis"; updateSelCount();
+      });
+      act_td.appendChild(b);
+    }
+    tr.appendChild(act_td); body.appendChild(tr);
+  });
+  if (r.tests.length > 300) body.appendChild(el("tr")).appendChild(el("td", "…and " + (r.tests.length - 300) + " more (use the API for the full list)"));
+  updateSelCount();
+}
+
+/* select-all checkbox */
+$("chk-all").onchange = () => {
+  document.querySelectorAll("#tests input.chk-test").forEach(c => c.checked = $("chk-all").checked);
+  updateSelCount();
+};
+
+/* batch analyse selected */
+let batchStop = false;
+$("btn-stop-batch").onclick = () => { batchStop = true; };
+$("btn-analyse-sel").onclick = async () => {
+  const checkboxes = [...document.querySelectorAll("#tests input.chk-test:checked")];
+  if (!checkboxes.length) return;
+  const testIds = checkboxes.map(c => c.dataset.testId);
+  const total = testIds.length, batchSize = 5;
+  let done = 0; batchStop = false;
+  $("btn-stop-batch").style.display = "inline-block";
+  $("batch-bar-fill").style.display = "inline-block";
+  $("btn-analyse-sel").disabled = true;
+  showErr(null);
+  for (let i = 0; i < total && !batchStop; i += batchSize) {
+    const batch = testIds.slice(i, i + batchSize);
+    $("batch-progress").textContent = "Analysing " + (i + 1) + "–" + Math.min(i + batchSize, total) + " of " + total + "…";
+    const results = await Promise.allSettled(
+      batch.map(tid => api("POST", "/api/runs/" + run.id + "/analyse", { test_id: tid }))
+    );
+    results.forEach((res, idx) => {
+      const tid = batch[idx];
+      const tr = [...document.querySelectorAll("#tests tr")].find(r => r.dataset.testId === tid);
+      if (!tr) return;
+      const chk = tr.querySelector("input.chk-test"); if (chk) { chk.checked = false; chk.remove(); }
+      const btn = tr.querySelector("button");
+      if (res.status === "fulfilled") {
+        const c = res.value;
+        // update the test object in run so restore works correctly
+        const t = run.tests.find(t => t.id === tid); if (t) t.case_id = c.id;
+        if (btn) btn.textContent = "Open analysis";
+        // show category badge in detail cell
+        const detailTd = tr.cells[3];
+        if (detailTd && c.classification) {
+          detailTd.replaceChildren();
+          detailTd.appendChild(el("span", c.classification.category + " " + Math.round(c.classification.confidence * 100) + "%", "badge " + c.classification.category));
+        }
+        current = c;
+      } else {
+        if (btn) { btn.textContent = "Retry"; btn.style.background = "var(--bad)"; }
+      }
+      done++;
+    });
+    $("batch-bar-i").style.width = Math.round(done / total * 100) + "%";
+    updateSelCount();
+  }
+  $("batch-progress").textContent = batchStop ? "Stopped at " + done + "/" + total + "." : "Done — " + done + " test" + (done !== 1 ? "s" : "") + " analysed.";
+  $("btn-stop-batch").style.display = "none";
+  $("btn-analyse-sel").disabled = false;
+  if (current) renderCase(current);
+};
+
+/* case */
+function renderCase(c) {
+  current = c; const k = c.classification, caps = c.capabilities;
+  $("case-card").classList.remove("hidden"); $("c-name").textContent = " · " + c.name;
+  const cat = $("r-cat"); cat.textContent = k.category; cat.className = "badge " + k.category;
+  $("r-bar").style.width = Math.round(k.confidence * 100) + "%"; $("r-conf").textContent = Math.round(k.confidence * 100) + "%";
+  $("r-src").textContent = c.source === "kb" ? "from knowledge base (no LLM call)" : "LLM analysis"; $("r-src").className = "pill " + (c.source === "kb" ? "ok" : "");
+  const hints = $("kbhints"); hints.replaceChildren();
+  if (c.kb_hints && c.kb_hints.length && c.source !== "kb") { const box = el("div", undefined, "kbbox"); box.appendChild(el("b", "Similar known problems: ")); box.appendChild(document.createTextNode(c.kb_hints.map(h => h.problem + " [" + h.status + ", " + Math.round(h.score * 100) + "%]").join("; "))); hints.appendChild(box); }
+  $("r-summary").textContent = k.summary;
+  $("r-root").textContent = k.root_cause ? "Root cause: " + k.root_cause : ""; $("r-wait").textContent = k.waiting_on ? "Was waiting on: " + k.waiting_on : ""; $("r-comp").textContent = k.suspected_component ? "Component: " + k.suspected_component : "";
+  const ev = $("r-evidence"); ev.replaceChildren(); (k.evidence.length ? k.evidence : ["(none)"]).forEach(e => ev.appendChild(el("li", e)));
+  $("r-fix").textContent = k.fix_suggestion || "-";
+  const hist = $("r-history"); hist.replaceChildren(); c.history.forEach((h, i) => hist.appendChild(el("span", "#" + (i + 1) + " " + h.category + " " + Math.round(h.confidence * 100) + "% (" + h.source + ")")));
+  const ask = $("ask"), fields = $("ask-fields"); fields.replaceChildren();
+  if (k.needs_info) { ask.classList.remove("hidden"); k.missing_info.forEach(m => { const w = el("div"); w.style.marginBottom = "8px"; const ta = el("textarea"); ta.style.minHeight = "70px"; ta.dataset.question = m.question; ta.placeholder = "Your answer / pasted output"; w.append(el("label", m.question), ta); fields.appendChild(w); }); } else ask.classList.add("hidden");
+  $("btn-patch").disabled = !caps.can_patch; $("btn-issue").disabled = !caps.can_issue; $("btn-kb").disabled = k.needs_info;
+  const hs = [];
+  if (!caps.can_patch) hs.push(caps.mode === "generic" ? "No project repository found: patch generation is unavailable." : "A patch needs a confident diagnosis and a target file in the repository.");
+  if (!caps.can_issue) hs.push("Issues are drafted for a confident product_bug, or after a fix failed its rerun.");
+  if (!caps.github_configured) hs.push("GitHub is not configured for this project.");
+  $("hint").textContent = hs.join(" ");
+  $("patch-card").classList.toggle("hidden", !c.patch && !c.rerun);
+  if (c.patch) { renderDiff(c.patch.diff); $("patch-src").textContent = c.patch.from_kb ? " · replayed from a verified knowledge-base fix (no LLM call)" : ""; } else $("patch").replaceChildren();
+  const rs = $("rerun-status"); rs.replaceChildren();
+  if (c.rerun && c.rerun.status !== "pending") rs.appendChild(el("b", c.rerun.status === "passed" ? "Rerun passed: fix verified and saved to the knowledge base. You can draft the pull request." : "Rerun failed (attempt " + c.rerun.attempts + "). The new log was analysed; see the updated diagnosis above." + (c.rerun.exhausted ? " Attempts exhausted: draft an issue." : ""), c.rerun.status === "passed" ? "" : "err"));
+  $("btn-pr").disabled = !c.patch;
+  if (!c.issue_draft && !c.pr_draft) $("draft-card").classList.add("hidden");
+}
+function renderDiff(diff) { const pre = $("patch"); pre.replaceChildren(); diff.split("\n").forEach(l => pre.appendChild(el("span", l + "\n", l.startsWith("+") && !l.startsWith("+++") ? "add" : l.startsWith("-") && !l.startsWith("---") ? "del" : ""))); }
+function showDraft(kind, d) {
+  draftKind = kind; $("draft-card").classList.remove("hidden");
+  $("draft-title-h").textContent = (kind === "issue" ? "Review GitHub issue" : "Review pull request") + " (nothing is created until you approve)";
+  $("draft-title").value = d.title; $("draft-body").value = d.body; const dups = $("dups"); dups.replaceChildren();
+  if (kind === "issue" && d.duplicates && d.duplicates.length) { dups.appendChild(el("b", "Possible duplicates: ")); d.duplicates.forEach(x => { const a = el("a", "#" + x.number + " " + x.title + " (" + x.state + ")"); a.href = x.url; a.target = "_blank"; a.rel = "noopener"; dups.append(a, document.createTextNode("  ")); }); }
+  $("published").replaceChildren();
+}
+
+/* actions */
+$("btn-submit").onclick = () => act("Parsing…", async () => {
+  const project = $("sel-project").value;
+  const f = $("file").files[0]; let r;
+  if (f) { const fd = new FormData(); fd.append("file", f); fd.append("project", project); r = await api("POST", "/api/runs", fd); await loadUploads(); }
+  else r = await api("POST", "/api/runs", { project, log: $("log").value, name: "pasted log" });
+  current = null; $("case-card").classList.add("hidden"); $("patch-card").classList.add("hidden"); $("draft-card").classList.add("hidden"); renderRun(r);
+  await loadRecentRuns();
+});
+$("btn-info").onclick = () => act("Re-analysing with your input…", async () => {
+  const answers = [...document.querySelectorAll("#ask-fields textarea")].filter(t => t.value.trim()); if (!answers.length) throw new Error("Enter an answer for at least one question.");
+  let data = current; for (const t of answers) data = await api("POST", "/api/case/" + current.id + "/info", { answer: t.value, question: t.dataset.question }); current = data;
+});
+const doPatch = () => act("Generating patch…", async () => { current = await api("POST", "/api/case/" + current.id + "/patch", { notes: $("patch-notes").value }); });
+$("btn-patch").onclick = doPatch; $("btn-patch2").onclick = doPatch;
+$("btn-rerun").onclick = () => act("Re-analysing rerun log…", async () => { const f = $("rerun-file").files[0]; if (!f) throw new Error("Choose the rerun log file."); const fd = new FormData(); fd.append("file", f); current = await api("POST", "/api/case/" + current.id + "/rerun", fd); });
+$("btn-kb").onclick = () => act("Saving…", async () => { await api("POST", "/api/case/" + current.id + "/kb"); });
+$("btn-issue").onclick = () => act("Drafting issue…", async () => { current = await api("POST", "/api/case/" + current.id + "/draft/issue"); showDraft("issue", current.issue_draft); });
+$("btn-pr").onclick = () => act("Drafting pull request…", async () => { current = await api("POST", "/api/case/" + current.id + "/draft/pr"); showDraft("pr", current.pr_draft); });
+$("btn-save").onclick = () => act("Saving…", async () => { current = await api("PUT", "/api/case/" + current.id + "/draft/" + draftKind, { title: $("draft-title").value, body: $("draft-body").value }); });
+$("btn-publish").onclick = () => act("Publishing…", async () => {
+  if (!confirm("Create this " + (draftKind === "issue" ? "issue" : "pull request") + " on GitHub now?")) return;
+  await api("PUT", "/api/case/" + current.id + "/draft/" + draftKind, { title: $("draft-title").value, body: $("draft-body").value });
+  const r = await api("POST", "/api/case/" + current.id + "/publish/" + draftKind, { approved: true }); current = r.case;
+  const box = $("published"); box.replaceChildren(); box.appendChild(el("b", r.published.dry_run ? "Dry run (nothing created): " : "Created: "));
+  const a = el("a", r.published.url); a.href = r.published.url; a.target = "_blank"; a.rel = "noopener"; box.appendChild(a);
+});
+$("file").onchange = () => { const f = $("file").files[0]; if (f) f.text().then(t => { $("log").value = t.slice(0, 200000); }); };
+$("sample").onchange = () => { const i = $("sample").value; if (i !== "") { $("log").value = samples[i].text; $("file").value = ""; } };
+
+(async () => {
+  try {
+    const s = await api("GET", "/api/status");
+    $("p-llm").textContent = s.llm_configured ? "LLM ready (" + s.llm_backend + ")" : "LLM not ready (" + s.llm_backend + ")"; $("p-llm").classList.add(s.llm_configured ? "ok" : "off");
+    $("p-gh").textContent = s.github_token || s.github_dry_run ? (s.github_dry_run ? "GitHub: dry run" : "GitHub ready") : "GitHub token missing"; $("p-gh").classList.add(s.github_token || s.github_dry_run ? "ok" : "off");
+    s.log_formats.forEach(f => {
+      [$("np-fmt"), $("cl-fmt")].forEach(sel => { const o = el("option", f); o.value = f; sel.appendChild(o); });
+    });
+    samples = await api("GET", "/api/samples"); samples.forEach((x, i) => { const o = el("option", x.name); o.value = i; $("sample").appendChild(o); });
+    await loadProjects(); await loadUploads(); await loadRecentRuns();
+  } catch (e) { showErr(e); }
+})();
+</script>
+</body>
+</html>

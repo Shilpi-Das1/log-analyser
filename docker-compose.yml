@@ -1,0 +1,19 @@
+services:
+  log-analyser:
+    build: .
+    image: log-analyser-v2
+    env_file: .env
+    ports:
+      - "5000:5000"   # web UI
+      - "8001:8001"   # MCP server (streamable-http) at http://localhost:8001/mcp
+    volumes:
+      - la-data:/data
+      # Folder that contains one sub-folder per project repository.
+      # Register each sub-folder in the UI (Projects tab / Clone from Git URL) or through the add_project MCP tool.
+      # A project whose folder is missing still works in generic mode (analysis only, no patch).
+      # Mounted read-write so the UI can git-clone new projects into the folder.
+      - ${PROJECTS_HOST_PATH:-./projects}:/workspace/projects
+    restart: unless-stopped
+
+volumes:
+  la-data:

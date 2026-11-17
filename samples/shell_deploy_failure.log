@@ -1,0 +1,9 @@
++ ./deploy.sh --env staging
++ kubectl rollout status deployment/web --timeout=120s
+Waiting for deployment "web" rollout to finish: 0 of 3 updated replicas are available...
+error: timed out waiting for the condition
+./deploy.sh: line 14: rollout verification failed
++ kubectl get pods -l app=web
+NAME                  READY   STATUS             RESTARTS   AGE
+web-6d9c7b8f5-abcde   0/1     ImagePullBackOff   0          2m
+Warning  Failed  kubelet  Failed to pull image "registry.internal/web:2.4.1": connection refused

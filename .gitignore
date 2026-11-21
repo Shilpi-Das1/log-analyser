@@ -5,4 +5,5 @@ data/
 .pytest_cache/
 .coverage
 uploads
-projects/ocs-quota
+projects/ocs-ci/
+projects/ocs-quota/

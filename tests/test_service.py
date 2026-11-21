@@ -21,7 +21,7 @@ def _analysed(monkeypatch, project, **cls_kw):
     return run, case, calls
 
 
-# ── submit_log / runs ────────────────────────────────────────────────
+# â”€â”€ submit_log / runs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def test_submit_log_parses_without_llm(project, monkeypatch):
     calls = fake_llm(monkeypatch, [cls()])
@@ -32,6 +32,55 @@ def test_submit_log_parses_without_llm(project, monkeypatch):
     assert service.get_run(run["id"])["id"] == run["id"]
     assert [r["id"] for r in service.list_runs("shop")] == [run["id"]]
     assert service.list_runs("other") == []
+
+
+def test_run_source_defaults_to_upload_and_keeps_name(project):
+    run = service.submit_log("shop", PYTEST_FAIL, "ci.log")
+    assert run["source"] == "upload" and run["meta"] == {} and run["name"] == "ci.log"
+    summary = service.list_runs("shop")[0]
+    assert summary["source"] == "upload" and summary["analysed"] == 0
+
+
+def test_github_actions_run_is_stamped_and_carries_meta(project):
+    meta = {"run_url": "https://github.com/o/shop/actions/runs/9", "run_number": 12, "branch": "main",
+            "sha": "abc1234", "bogus": "dropped", "workflow": ""}
+    run = service.submit_log("shop", PYTEST_FAIL, "pytest-output.log", "github_actions", meta)
+    # name gets the UTC creation time: pytest-output_2026-11-21_07-22-42.log
+    assert run["name"] == "pytest-output_" + run["created"][:19].replace("T", "_").replace(":", "-") + ".log"
+    assert run["source"] == "github_actions"
+    assert run["meta"] == {"run_url": meta["run_url"], "run_number": "12", "branch": "main", "sha": "abc1234"}
+    assert service.list_runs("shop")[0]["meta"]["run_number"] == "12"
+
+
+def test_meta_drops_non_http_run_url_and_rejects_unknown_source(project):
+    run = service.submit_log("shop", PYTEST_FAIL, "a.log", "github_actions", {"run_url": "javascript:alert(1)"})
+    assert "run_url" not in run["meta"]
+    with pytest.raises(AppError, match="Unknown log source"):
+        service.submit_log("shop", PYTEST_FAIL, "a.log", "email")
+
+
+def test_github_actions_run_without_project_is_matched_by_repo(project, isolated):
+    # registered github_repo wins
+    run = service.submit_log("", PYTEST_FAIL, "a.log", "github_actions", {"repo": "owner/shop"})
+    assert run["project"] == "shop"
+    # a folder under PROJECTS_ROOT named after the repo is auto-registered
+    (isolated.parent / "newrepo").mkdir()
+    run = service.submit_log("", PYTEST_FAIL, "a.log", "github_actions", {"repo": "acme/newrepo"})
+    assert run["project"] == "newrepo"
+    assert any(p["name"] == "newrepo" and p["github_repo"] == "acme/newrepo" for p in service.list_projects())
+    # registered name matches the repo name even when github_repo differs
+    assert service.submit_log("", PYTEST_FAIL, "a.log", "github_actions", {"repo": "other/shop"})["project"] == "shop"
+    # unknown repo, bad repo, uploads and explicit projects are untouched
+    assert service.submit_log("", PYTEST_FAIL, "a.log", "github_actions", {"repo": "acme/none"})["project"] == ""
+    assert service.submit_log("", PYTEST_FAIL, "a.log", "github_actions", {"repo": "bad"})["project"] == ""
+    assert service.submit_log("", PYTEST_FAIL, "a.log", "upload", {"repo": "owner/shop"})["project"] == ""
+    assert service.submit_log("shop", PYTEST_FAIL, "a.log", "github_actions", {"repo": "acme/newrepo"})["project"] == "shop"
+
+
+def test_list_runs_counts_analysed_failures(project, monkeypatch):
+    run, _case, _calls = _analysed(monkeypatch, project)
+    assert service.list_runs("shop")[0]["analysed"] == 1
+    assert run["id"] == service.list_runs("shop")[0]["id"]
 
 
 def test_submit_log_validation(project, monkeypatch):
@@ -56,7 +105,7 @@ def test_project_wrappers(isolated):
     assert service.list_projects() == []
 
 
-# ── analyse_failure ──────────────────────────────────────────────────
+# â”€â”€ analyse_failure â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def test_only_failed_tests_are_analysed(project, monkeypatch):
     calls = fake_llm(monkeypatch, [cls()])
@@ -103,7 +152,7 @@ def test_missing_project_directory_means_generic_mode(project, monkeypatch):
     assert case["capabilities"]["mode"] == "generic" and case["capabilities"]["can_patch"] is False
 
 
-# ── interactive needs-info loop ──────────────────────────────────────
+# â”€â”€ interactive needs-info loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def test_needs_info_then_provide_info_reanalyses(project, monkeypatch):
     unsure = cls(category="unknown", confidence=0.2, missing_info=[{"id": "q1", "question": "pod logs?"}])
@@ -136,7 +185,7 @@ def test_timeout_is_not_blindly_accepted(project, monkeypatch):
     assert case["classification"]["needs_info"] is True and case["classification"]["missing_info"]
 
 
-# ── patch / rerun ────────────────────────────────────────────────────
+# â”€â”€ patch / rerun â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def test_generate_patch_and_rerun_passed_verifies_kb(project, monkeypatch):
     fake_llm(monkeypatch, [cls(), PATCH_REPLY])
@@ -201,7 +250,7 @@ def test_patch_error_propagates(project, monkeypatch):
         service.generate_patch(case["id"])
 
 
-# ── knowledge base reuse ─────────────────────────────────────────────
+# â”€â”€ knowledge base reuse â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def test_verified_kb_entry_answers_without_llm(project, monkeypatch):
     fake_llm(monkeypatch, [cls(), PATCH_REPLY])
@@ -244,7 +293,7 @@ def test_save_to_kb_rejects_unconfident_case(project, monkeypatch):
         service.save_to_kb(case["id"])
 
 
-# ── drafts and approval ──────────────────────────────────────────────
+# â”€â”€ drafts and approval â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def test_issue_draft_edit_and_publish_requires_approval(project, monkeypatch):
     _, case, _ = _analysed(monkeypatch, project)
@@ -271,6 +320,19 @@ def test_issue_requires_product_bug_or_failed_rerun(project, monkeypatch):
         service.draft_issue(case["id"])
     with pytest.raises(AppError, match="Draft the issue"):
         service.create_issue(case["id"], True)
+
+
+def test_force_draft_issue_overrides_gate_but_not_approval(project, monkeypatch):
+    _, case, _ = _analysed(monkeypatch, project, category="env_infra")
+    assert service.get_case(case["id"])["capabilities"]["can_issue"] is False
+    with pytest.raises(AppError, match="product_bug"):
+        service.draft_issue(case["id"])
+    drafted = service.draft_issue(case["id"], force=True)
+    assert drafted["issue_draft"]["title"]
+    with pytest.raises(AppError, match="approved"):
+        service.create_issue(case["id"], False)
+    assert service.get_case(case["id"])["published"] == []
+    assert service.create_issue(case["id"], True)["published"]["dry_run"] is True
 
 
 def test_issue_after_failed_rerun_mentions_attempts(project, monkeypatch):

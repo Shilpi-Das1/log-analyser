@@ -3,11 +3,15 @@
 Flow: submit_log (parse, no LLM) -> analyse_failure (KB first, LLM only on a miss) ->
 generate_patch -> [rerun log] -> draft/create PR or issue (human approval required).
 """
+import os
+
 from core import config, extract, github, kb, locator, parsers, patcher, projects, store
 from core.classifier import classify
 from core.errors import AppError
 
 MAX_ATTEMPTS = 2
+SOURCES = ("upload", "github_actions")
+META_KEYS = ("run_url", "run_number", "workflow", "branch", "sha", "artifact", "repo")
 
 
 # ── projects (thin wrappers so the web and MCP layers share one entry point) ──
@@ -36,8 +40,32 @@ def _run_view(run: dict) -> dict:
     return {**run, "tests": tests}
 
 
-def submit_log(project: str, log_text: str, name: str = "log") -> dict:
-    """Parse a log into per-test results. Deterministic; never calls the LLM."""
+def _clean_meta(meta: dict | None) -> dict:
+    """Keep only known keys, as short strings; run_url must be http(s) (it is rendered as a link)."""
+    out = {k: str(meta[k])[:200] for k in META_KEYS if meta and meta.get(k)}
+    if not out.get("run_url", "https://").lower().startswith(("http://", "https://")):
+        del out["run_url"]
+    return out
+
+
+def _stamped(name: str, created: str) -> str:
+    """'pytest-output.log' -> 'pytest-output_2026-11-21_07-22-42.log' (created is UTC ISO)."""
+    stem, ext = os.path.splitext(name)
+    return f"{stem}_{created[:19].replace('T', '_').replace(':', '-')}{ext}"
+
+
+def submit_log(project: str, log_text: str, name: str = "log", source: str = "upload",
+               meta: dict | None = None) -> dict:
+    """Parse a log into per-test results. Deterministic; never calls the LLM.
+
+    source is "upload" (a person) or "github_actions" (the CI job). CI logs get the UTC
+    date/time added to their name so repeated runs of the same file stay distinguishable.
+    """
+    if source not in SOURCES:
+        raise AppError("Unknown log source.")
+    clean_meta = _clean_meta(meta)
+    if not project and source == "github_actions":
+        project = projects.match_repo(clean_meta.get("repo", ""))
     proj = projects.get(project) if project else {}
     if not isinstance(log_text, str):
         raise AppError("The log must be text.")
@@ -48,8 +76,12 @@ def submit_log(project: str, log_text: str, name: str = "log") -> dict:
     parsed = parsers.parse(log_text, proj.get("log_format", "auto"), name)
     for test in parsed["tests"]:
         test["case_id"] = None
-    run = {"id": store.new_id(), "project": project, "name": name[:120], "created": store.now(),
-           "format": parsed["format"], "counts": parsed["counts"], "tests": parsed["tests"]}
+    created = store.now()
+    if source == "github_actions":
+        name = _stamped(name[:90], created)
+    run = {"id": store.new_id(), "project": project, "name": name[:120], "created": created,
+           "format": parsed["format"], "counts": parsed["counts"], "tests": parsed["tests"],
+           "source": source, "meta": clean_meta}
     store.save("runs", run)
     return _run_view(run)
 
@@ -59,8 +91,11 @@ def get_run(run_id: str) -> dict:
 
 
 def list_runs(project: str = "") -> list[dict]:
+    """Run summaries, newest first. `analysed` = failed tests that already have a case."""
     runs = store.list_all("runs")
-    return [{k: r[k] for k in ("id", "project", "name", "created", "format", "counts")}
+    return [{**{k: r[k] for k in ("id", "project", "name", "created", "format", "counts")},
+             "source": r.get("source", "upload"), "meta": r.get("meta", {}),
+             "analysed": sum(1 for t in r["tests"] if t.get("case_id"))}
             for r in runs if not project or r["project"] == project]
 
 
@@ -348,9 +383,13 @@ def kb_delete(entry_id: int, project: str = "") -> None:
 
 # ── issue / PR drafts and publishing ─────────────────────────────────
 
-def draft_issue(case_id: str) -> dict:
+def draft_issue(case_id: str, force: bool = False) -> dict:
+    """Draft an issue. `force=True` (explicit user override) skips the product_bug/failed-rerun gate.
+
+    Publishing is unaffected: create_issue still needs approved=True.
+    """
     case = store.load("cases", case_id)
-    if not capabilities(case)["can_issue"]:
+    if not force and not capabilities(case)["can_issue"]:
         raise AppError("An issue can only be drafted for a confident product_bug or after a failed fix rerun.")
     cls = case["classification"]
     repo = projects.github_repo_of(_project_or_empty(case))

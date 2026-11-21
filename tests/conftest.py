@@ -24,6 +24,7 @@ def isolated(tmp_path, monkeypatch):
 
     monkeypatch.setattr(config, "PROJECTS_ROOT", root)
     monkeypatch.setattr(config, "DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr(config, "UPLOADS_DIR", tmp_path / "data" / "uploads")
     monkeypatch.setattr(config, "GITHUB_DRY_RUN", True)
     monkeypatch.setattr(config, "GITHUB_REPO", "")
     monkeypatch.setattr(config, "GITHUB_TOKEN", "")

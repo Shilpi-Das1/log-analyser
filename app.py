@@ -2,7 +2,7 @@
 import os
 import re
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, make_response, render_template, request
 
 from core import config, llm, parsers, service
 from core.errors import AppError
@@ -71,7 +71,18 @@ def _log_from_request() -> tuple[str, str, str]:
 
 @app.get("/")
 def index():
-    return render_template("index.html")
+    resp = make_response(render_template("index.html"))
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    resp.headers["Surrogate-Control"] = "no-store"
+    resp.headers["Vary"] = "*"
+    return resp
+
+
+@app.get("/favicon.ico")
+def favicon():
+    return app.send_static_file("favicon.svg")
 
 
 @app.get("/healthz")
@@ -182,10 +193,14 @@ def remove_project(name):
 @app.post("/api/runs")
 def submit_log():
     project, text, name = _log_from_request()
-    # Auto-save uploaded files to the uploads store (pasted text is not saved)
-    if request.files.get("file"):
+    is_file = bool(request.files.get("file"))
+    fields = request.form if is_file else _body()
+    source = fields.get("source") or "upload"
+    meta = {k: fields.get(k) for k in service.META_KEYS}
+    # Auto-save files uploaded by a person (pasted text and CI posts are not saved)
+    if is_file and source == "upload":
         _save_upload(text, name)
-    return jsonify(service.submit_log(project, text, name))
+    return jsonify(service.submit_log(project, text, name, source, meta))
 
 
 @app.get("/api/runs")
@@ -238,7 +253,7 @@ def save_kb(case_id):
 @app.post("/api/case/<case_id>/draft/<kind>")
 def draft(case_id, kind):
     if kind == "issue":
-        return jsonify(service.draft_issue(case_id))
+        return jsonify(service.draft_issue(case_id, force=_body().get("force") is True))
     if kind == "pr":
         return jsonify(service.draft_pr(case_id))
     raise AppError("Unknown draft type.")

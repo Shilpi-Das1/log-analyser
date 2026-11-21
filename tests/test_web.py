@@ -19,6 +19,7 @@ def client():
 def test_index_health_status_samples(client):
     assert client.get("/").status_code == 200
     assert client.get("/healthz").get_json() == {"status": "ok"}
+    assert client.get("/favicon.ico").mimetype == "image/svg+xml"
     status = client.get("/api/status").get_json()
     assert status["github_dry_run"] is True and "pytest" in status["log_formats"]
     names = {s["name"] for s in client.get("/api/samples").get_json()}
@@ -33,12 +34,13 @@ def test_projects_crud_and_available(client):
     assert client.post("/api/projects", json={"name": "bad name"}).status_code == 400
     assert client.delete("/api/projects/shop").get_json() == {"removed": "shop"}
     assert client.delete("/api/projects/shop").status_code == 400
+
+
 def test_refresh_project_endpoint(client):
     client.post("/api/projects", json={"name": "shop", "path": "shop"})
     r = client.post("/api/projects/shop/refresh")
     assert r.status_code == 400 and "not a git clone" in r.get_json()["error"]
     assert client.post("/api/projects/ghost/refresh").status_code == 400
-
 
 
 def test_available_projects_when_root_missing(client, monkeypatch, tmp_path):
@@ -93,6 +95,15 @@ def test_info_kb_and_issue_endpoints(client, monkeypatch):
     assert client.post(f"/api/case/{cid}/publish/issue", json={"approved": True}).get_json()["published"]["dry_run"]
 
 
+def test_force_draft_issue_over_http(client, monkeypatch):
+    fake_llm(monkeypatch, [cls(category="env_infra")])
+    client.post("/api/projects", json={"name": "shop", "path": "shop", "github_repo": "o/shop"})
+    run = client.post("/api/runs", json={"project": "shop", "log": PYTEST_FAIL}).get_json()
+    cid = client.post(f"/api/runs/{run['id']}/analyse", json={"test_id": TEST_ID}).get_json()["id"]
+    assert client.post(f"/api/case/{cid}/draft/issue").status_code == 400
+    assert client.post(f"/api/case/{cid}/draft/issue", json={"force": "yes"}).status_code == 400
+    assert client.post(f"/api/case/{cid}/draft/issue", json={"force": True}).get_json()["issue_draft"]["title"]
+
 def test_upload_and_error_paths(client):
     client.post("/api/projects", json={"name": "shop", "path": "shop"})
     up = client.post("/api/runs", data={"project": "shop", "file": (io.BytesIO(PYTEST_FAIL.encode()), "a.log")},
@@ -104,6 +115,27 @@ def test_upload_and_error_paths(client):
     assert client.post("/api/case/0123456789/draft/bogus").status_code == 400
     assert client.post("/api/case/0123456789/publish/bogus", json={"approved": True}).status_code == 400
     assert client.post("/api/runs/0123456789/analyse", json={}).status_code == 400
+
+
+def test_ci_post_is_marked_stamped_and_not_saved_to_uploads(client):
+    client.post("/api/projects", json={"name": "shop", "path": "shop"})
+    ci = client.post("/api/runs", content_type="multipart/form-data", data={
+        "project": "shop", "source": "github_actions", "run_number": "7", "branch": "main",
+        "run_url": "https://github.com/o/shop/actions/runs/1",
+        "file": (io.BytesIO(PYTEST_FAIL.encode()), "pytest-output.log")}).get_json()
+    assert ci["source"] == "github_actions" and ci["meta"]["run_number"] == "7"
+    assert ci["name"].startswith("pytest-output_20") and ci["name"].endswith(".log")
+    # a CI post is not a person's upload, so it must not appear in the uploads list
+    assert client.get("/api/uploads").get_json() == []
+
+    mine = client.post("/api/runs", content_type="multipart/form-data", data={
+        "project": "shop", "file": (io.BytesIO(PYTEST_FAIL.encode()), "mine.log")}).get_json()
+    assert mine["source"] == "upload" and mine["name"] == "mine.log"
+    assert [u["name"] for u in client.get("/api/uploads").get_json()] == ["mine.log"]
+
+    runs = {r["id"]: r for r in client.get("/api/runs").get_json()}
+    assert runs[ci["id"]]["source"] == "github_actions" and runs[mine["id"]]["source"] == "upload"
+    assert client.post("/api/runs", json={"project": "shop", "log": PYTEST_FAIL, "source": "x"}).status_code == 400
 
 
 def test_upload_limit_returns_json(client, monkeypatch):

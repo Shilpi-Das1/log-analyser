@@ -106,6 +106,28 @@ def github_repo_of(project: dict) -> str:
     return project.get("github_repo") or config.GITHUB_REPO
 
 
+def match_repo(repo: str) -> str:
+    """Project name for a GitHub 'owner/name', or '' if none.
+
+    Order: a project whose github_repo equals it; a project whose name or folder equals the repo
+    name; an unregistered folder named after the repo under PROJECTS_ROOT (registered on the spot).
+    """
+    repo = (repo or "").strip()
+    if not _GH_RE.match(repo):
+        return ""
+    short = repo.split("/")[1]
+    found = list(_read().values())
+    for p in found:
+        if (p.get("github_repo") or "").lower() == repo.lower():
+            return p["name"]
+    for p in found:
+        if short.lower() in (p["name"].lower(), Path(p["path"]).name.lower()):
+            return p["name"]
+    if _NAME_RE.match(short) and resolve_root(short).is_dir():
+        return add(short, short, "auto", repo)["name"]
+    return ""
+
+
 def _inject_token(url: str, token: str) -> str:
     """Embed a token into an https:// URL as https://token@host/path."""
     parsed = urllib.parse.urlparse(url)
